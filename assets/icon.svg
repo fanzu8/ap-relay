@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" stroke-width="2.2" stroke-linecap="butt" stroke-linejoin="round" role="img" aria-label="ap-relay icon">
+  <!-- Wi-Fi signal arcs: progressively wider from bottom to top -->
+  <g stroke="#2f6fed">
+    <path d="M20.69 35.69A16 16 0 0 1 43.31 35.69"/>
+    <path d="M15.74 30.74A23 23 0 0 1 48.26 30.74"/>
+    <path d="M10.79 25.79A30 30 0 0 1 53.21 25.79"/>
+  </g>
+
+  <!-- Globe: hollow interior, distinct color from the signal -->
+  <g stroke="#16a34a">
+    <circle cx="32" cy="47" r="9" fill="none"/>
+    <ellipse cx="32" cy="47" rx="3.6" ry="9" fill="none"/>
+    <path d="M23 47h18" fill="none"/>
+  </g>
+</svg>

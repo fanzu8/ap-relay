@@ -1,0 +1,25 @@
+[Unit]
+Description=DHCP/DNS for the AP
+After=ap-hostapd.service
+Wants=ap-hostapd.service
+
+# 依赖 AP 接口已存在；变量全部来自 /etc/ap-relay.conf
+# 用 EnvironmentFile 而不是把网段写死在命令行里，避免改一处漏一处
+[Service]
+# 接口名、网段、DNS 端口都来自 /etc/ap-relay.conf
+# 先给新变量一个默认值，兼容没有 DNS_STD_PORT 的旧配置
+Environment=DNS_STD_PORT=53
+EnvironmentFile=/etc/ap-relay.conf
+Type=simple
+ExecStart=/usr/sbin/dnsmasq --keep-in-foreground --conf-file=/dev/null \
+  --interface=${AP_IF} --bind-interfaces --except-interface=lo \
+  --port=${DNS_STD_PORT} \
+  --dhcp-range=${DHCP_START},${DHCP_END},255.255.255.0,12h \
+  --dhcp-option=3,${AP_IP} --dhcp-option=6,${AP_IP} \
+  --no-resolv --server=127.0.0.1#${DNS_PORT} \
+  --log-dhcp --log-facility=-
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

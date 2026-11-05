@@ -1,0 +1,18 @@
+[Unit]
+Description=Wi-Fi AP (hostapd)
+After=network.target
+Wants=network.target
+
+# 顺序：先建接口（ap-prep）→ 渲染配置（ap-gen）→ 起 hostapd
+# 两个 ExecStartPre 都是幂等的，失败会自动重试（Restart=always）
+[Service]
+Type=simple
+# 先建 AP 接口，再渲染配置，最后起 hostapd
+ExecStartPre=/usr/local/bin/ap-prep.sh
+ExecStartPre=/usr/local/bin/ap-gen.sh
+ExecStart=/usr/sbin/hostapd /etc/hostapd/ap.conf
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

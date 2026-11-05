@@ -1,0 +1,14 @@
+[Unit]
+Description=AP forwarding + NAT
+After=ap-hostapd.service nftables.service
+Wants=ap-hostapd.service nftables.service
+
+# oneshot：跑一次脚本即退出，RemainAfterExit 让 systemd 记住“已完成”
+# 脚本本身是幂等的，重复 start 不会叠加规则
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/ap-fw.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

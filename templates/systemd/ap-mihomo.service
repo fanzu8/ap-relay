@@ -1,0 +1,20 @@
+[Unit]
+Description=mihomo transparent proxy + TUN
+After=network-online.target ap-hostapd.service nftables.service
+Wants=network-online.target nftables.service
+Before=ap-firewall.service
+
+# 顺序：hostapd 起来之后再启动；Before=ap-firewall 保证 NAT 在 TUN 之后配好
+# ExecStartPost 加策略路由，ExecStopPost 撤销 —— 停止时流量回落内核转发，不会断网
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/mihomo -d /etc/mihomo -f /etc/mihomo/config.yaml
+# TUN 出现后加策略路由；停止时撤掉（流量回落内核转发，不会断网）
+ExecStartPost=/usr/local/bin/ap-tun-route.sh
+ExecStopPost=/usr/local/bin/ap-tun-unroute.sh
+Restart=always
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

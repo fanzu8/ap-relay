@@ -1,0 +1,6 @@
+.DS_Store
+*.log
+*.bak
+*.pcap
+providers/*.yaml
+!providers/.gitkeep

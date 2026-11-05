@@ -1,0 +1,50 @@
+#!/usr/sbin/nft -f
+# ---------------------------------------------------------------------------
+# ap-relay 防火墙规则模板
+#
+# ★ 本文件是模板：${...} 占位符必须先用 scripts/ap-render.sh 渲染。
+#   直接复制会得到无效规则。例：
+#     ap-render.sh templates/51_hotspot.nft /etc/nftables.d/51_hotspot.nft
+#
+# 放到发行版对应的位置：
+#   Alpine / postmarketOS : /etc/nftables.d/51_hotspot.nft
+#   Debian / Ubuntu       : 自行 include 到 /etc/nftables.conf（不要和 ufw 抢）
+#   RHEL / Fedora         : 不要用本文件，改用 firewalld（见 docs/porting.md）
+# ---------------------------------------------------------------------------
+
+table inet filter {
+	chain input {
+		# DHCP：客户端拿地址。漏了这条，客户端能连上 Wi-Fi 但拿不到 IP。
+		iifname "${AP_IF}" udp dport ${DHCP_PORT} accept comment "DHCP from AP"
+
+		# 客户端 DNS。
+		iifname "${AP_IF}" tcp dport ${DNS_STD_PORT} accept comment "DNS/TCP from AP"
+		iifname "${AP_IF}" udp dport ${DNS_STD_PORT} accept comment "DNS/UDP from AP"
+
+		# ★ 必须放行 TUN 入站（见 docs/pitfalls.md 坑 18）
+		# mixed/system 栈会把客户端连接改写成 <tun>:x -> <tun>:随机端口，
+		# 再从 TUN 作为入站包送进内核；input 默认 drop 时永远不会有 SYN-ACK。
+		iifname "${TUN_DEV}" counter accept comment "mihomo TUN stack loopback"
+
+		# 兜底日志：走到链尾 = 即将被 policy drop。限速防止刷屏。
+		# 查看：journalctl -k | grep nft-drop
+		limit rate 20/minute log prefix "nft-drop-input: " level info
+	}
+
+	chain forward {
+		# ★ QUIC 封锁（见 docs/pitfalls.md 坑 21）
+		# 机场 UDP 中继不可用时必须封：App 会一直重试 QUIC 而不回落 TCP。
+		# 用 reject 而不是 drop，客户端能立刻收到 ICMP 并回落。
+		# 如果你的机场 UDP 正常，删掉这一行即可。
+		iifname "${AP_IF}" udp dport ${QUIC_PORT} counter reject comment "force TCP fallback"
+
+		# 允许 AP 客户端转发出去（具体路由由 ip rule 决定）
+		iifname "${AP_IF}" accept comment "forward from AP"
+
+		# 进/出 TUN 的转发（计数器方便排障）
+		oifname "${TUN_DEV}" counter accept comment "forward into TUN"
+		iifname "${TUN_DEV}" counter accept comment "forward out of TUN"
+
+		limit rate 20/minute log prefix "nft-drop-forward: " level info
+	}
+}

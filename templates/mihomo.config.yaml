@@ -1,0 +1,178 @@
+# ============================================================
+# ap-relay —— mihomo 配置模板
+# 放到 /etc/mihomo/config.yaml，节点文件放 /etc/mihomo/providers/
+#
+# ★ 本文件是模板：${...} 占位符必须先用 scripts/ap-render.sh 渲染。
+#   直接复制会得到无效 YAML。例：
+#     ap-render.sh templates/mihomo.config.yaml /etc/mihomo/config.yaml
+#
+# 必须修改：secret
+# 可选：external-ui（静态面板目录）、nameserver
+# 说明：本文件不含任何订阅地址、节点或密钥
+#
+# 与 /etc/ap-relay.conf 必须对齐的两项（写错会静默失效）：
+#   tun.device   <->  TUN_DEV
+#   dns.listen   <->  DNS_PORT
+# 其余（fake-ip 段、策略路由）由 ap-tun-route.sh 负责，不要在这里开 auto-route。
+# ============================================================
+
+mixed-port: ${GLOBAL_PORT}
+# 如果不需要从 AP 客户端访问面板，把 allow-lan 改成 false，
+# 并把 external-controller 改成 127.0.0.1:${UI_PORT}。
+allow-lan: true
+bind-address: '*'
+mode: rule
+log-level: info
+ipv6: false
+
+external-controller: 0.0.0.0:${UI_PORT}
+external-ui: ui
+secret: CHANGE_ME
+
+unified-delay: true
+# 小带宽 / 高并发环境下建议 false。注意它不是万能加速项：
+# 实测开关对并发表现没有稳定影响，别把它当因果结论（见 docs/pitfalls.md 坑 20）
+tcp-concurrent: false
+find-process-mode: off
+
+profile:
+  store-selected: true
+  store-fake-ip: true
+
+# geo 数据放本地，避免启动时联网拉取（机场/网络可能拉不动）
+geodata-mode: false
+geodata-loader: memconservative
+geo-auto-update: false
+
+sniffer:
+  enable: true
+  force-dns-mapping: true
+  parse-pure-ip: true
+  # 保持 false：不要把目标 IP 改写成嗅探到的域名，
+  # 否则会破坏使用"假 SNI"的客户端（见坑 1）
+  override-destination: false
+  sniff:
+    HTTP:
+      ports: [${HTTP_PORT}, ${HTTP_ALT_START}-${HTTP_ALT_END}]
+    TLS:
+      ports: [${TLS_PORT}, ${TLS_ALT_PORT}]
+    QUIC:
+      ports: [${QUIC_PORT}, ${TLS_ALT_PORT}]
+
+dns:
+  enable: true
+  # 默认用标准 53；如果 127.0.0.1:53 已被占用，可改成 1053 等空闲端口，
+  # 并同步 /etc/ap-relay.conf 的 DNS_PORT。
+  listen: 127.0.0.1:${DNS_PORT}
+  ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - '*.lan'
+    - '*.local'
+    - '*.arpa'
+    - '+.msftconnecttest.com'
+    - '+.msftncsi.com'
+  default-nameserver: [223.5.5.5, 119.29.29.29]
+  proxy-server-nameserver: [223.5.5.5, 119.29.29.29]
+  nameserver:
+    - https://dns.alidns.com/dns-query
+    - https://doh.pub/dns-query
+
+tun:
+  enable: true
+  device: ${TUN_DEV}    # 需与 /etc/ap-relay.conf 的 TUN_DEV 一致
+  # mixed = TCP 走内核栈 + UDP 走 gVisor；也可用 system / gvisor
+  # 三者对比见 docs/architecture.md
+  stack: mixed
+  mtu: 1500
+  # 必须 false：路由由 ap-tun-route.sh 手工添加，只抓 iif <AP 接口>
+  auto-route: false
+  auto-detect-interface: true
+  strict-route: false
+  dns-hijack:
+    - any:${DNS_STD_PORT}
+
+# ------------------------------------------------------------
+# 节点：provider_a / provider_b 替换成你自己的机场快照
+# 文件名要与这里的 path 一致，放在 /etc/mihomo/providers/
+# ------------------------------------------------------------
+proxy-providers:
+  provider_a:
+    type: file
+    path: ./providers/provider_a.yaml
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+  provider_b:
+    type: file
+    path: ./providers/provider_b.yaml
+    health-check:
+      enable: true
+      url: https://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: 🚀 代理
+    type: select
+    proxies: [♻️ 自动, 🔯 故障转移, 🇭🇰 香港, 🇯🇵 日本, 🌐 UDP, DIRECT]
+  - name: ♻️ 自动
+    type: url-test
+    use: [provider_a, provider_b]
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+  # UDP 专用组：必须选"确实支持 UDP 中继"的机场（见坑 21）
+  - name: 🌐 UDP
+    type: url-test
+    use: [provider_a]
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+    tolerance: 50
+  - name: 🔯 故障转移
+    type: fallback
+    use: [provider_a, provider_b]
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+  - name: 🇭🇰 香港
+    type: url-test
+    use: [provider_a, provider_b]
+    filter: "(?i)香港|HK|Hong"
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+  - name: 🇯🇵 日本
+    type: url-test
+    use: [provider_a, provider_b]
+    filter: "(?i)日本|JP|Japan|东京|大阪"
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+
+rules:
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - GEOSITE,private,DIRECT
+
+  # UDP 统一走 UDP 组。若机场 UDP 可用且主组节点也支持，可以删掉这条。
+  - NETWORK,udp,🌐 UDP
+
+  # ★★ 域名规则必须排在 GEOIP,CN 之前（坑 19）★★
+  # 国内 DNS 会把 Google 系域名解析到国内 CDN IP，被 GEOIP,CN 判成直连 → 必然超时。
+  # 走代理时 mihomo 把「域名」交给节点，由节点自己解析，出口才对。
+  - GEOSITE,google,🚀 代理
+  - GEOSITE,youtube,🚀 代理
+  - DOMAIN-SUFFIX,google.com,🚀 代理
+  - DOMAIN-SUFFIX,googlevideo.com,🚀 代理
+  - DOMAIN-SUFFIX,youtube.com,🚀 代理
+  - DOMAIN-SUFFIX,youtu.be,🚀 代理
+  - DOMAIN-SUFFIX,ytimg.com,🚀 代理
+  - DOMAIN-SUFFIX,ggpht.com,🚀 代理
+  - DOMAIN-SUFFIX,gstatic.com,🚀 代理
+  - DOMAIN-SUFFIX,googleapis.com,🚀 代理
+  - DOMAIN-SUFFIX,googleusercontent.com,🚀 代理
+
+  - GEOSITE,cn,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,🚀 代理
