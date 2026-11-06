@@ -43,7 +43,7 @@
 | `ap-hostapd` | `ExecStartPre` creates the AP interface and renders the config, then starts hostapd | First (`After=network.target`) |
 | `ap-dnsmasq` | DHCP + forwards DNS to mihomo | `After=ap-hostapd` |
 | `ap-mihomo` | TUN + rule-based routing; `ExecStartPost` adds policy routing, `ExecStopPost` removes it | `After=ap-hostapd`, `Before=ap-firewall` |
-| `ap-firewall` | `ip_forward` + NAT + allows AP input (oneshot) | Last (`After=ap-hostapd, nftables`) |
+| `ap-firewall` | `ip_forward` + NAT + allows AP input + allows iptables `FORWARD` (oneshot, nft first; keeps Docker's policy drop from blocking forwarding, see pitfall 22) | Last (`After=ap-hostapd, nftables`) |
 
 ## Scripts
 
@@ -54,7 +54,7 @@
 | `ap-gen.sh` | hostapd `ExecStartPre` | Renders `hostapd.conf` from `ap-hotspot.conf` |
 | `ap-render.sh` | manual | Renders `${...}` placeholders in templates from `/etc/ap-relay.conf` |
 | `ap-mode.sh` | manual | Switches `24g` / `5g`, polling until the AP is really up |
-| `ap-fw.sh` | `ap-firewall` | Enables forwarding + NAT + AP input (nft first, iptables fallback) |
+| `ap-fw.sh` | `ap-firewall` | Enables forwarding + NAT + AP input + iptables `FORWARD` allows (nft first, iptables fallback) |
 | `ap-tun-route.sh` | mihomo `ExecStartPost` | Adds `ip rule` / table `$TABLE_ID` / `rp_filter=0` / TUN input allow |
 | `ap-tun-unroute.sh` | mihomo `ExecStopPost` | Removes the rules (traffic falls back to kernel forwarding) |
 | `ap-diag.sh` | manual | One-shot health check |

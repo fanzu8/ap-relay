@@ -39,8 +39,26 @@ Interpret in this order:
 
 1. No lease → DHCP problem (dnsmasq not running / interface mismatch)
 2. DNS does not return a fake IP → mihomo DNS is not up, or dnsmasq's upstream is not `$DNS_PORT`
-3. Fake IP works but TUN counters do not increase → policy routing is not active
+3. Fake IP works but TUN counters do not increase → policy routing is not active, or packets are dropped by iptables in the forward stage (with Docker installed, see pitfall 22)
 4. TUN has packets but connections fail → **check whether the firewall input chain allows the TUN** (see below)
+
+### The TUN receives no traffic at all (packets never reach it)
+
+Confirm policy routing first, then check whether iptables' `FORWARD` policy is
+dropping the packets:
+
+```sh
+ip rule show | grep iif
+iptables -S FORWARD | head
+iptables -L FORWARD -v -n | head -3
+```
+
+If you see `-P FORWARD DROP` with no `ap-relay` allow rules, Docker has changed
+the default policy to DROP (pitfall 22). Fix:
+
+```sh
+sudo ap-fw.sh     # idempotently re-adds the FORWARD allows for AP_IF and TUN_DEV
+```
 
 ### The TUN has traffic but mihomo's connection table is empty
 

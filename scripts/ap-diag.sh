@@ -36,6 +36,14 @@ line; echo "[5] 防火墙"
 nft list chain inet filter input 2>/dev/null | grep -E "iifname \"$TUN_DEV\"|nft-drop" | sed 's/^/  /'
 echo "  最近被丢（journalctl -k）:"
 journalctl -k --since "-30min" -o cat 2>/dev/null | grep 'nft-drop' | tail -5 | sed 's/^/    /'
+if command -v iptables >/dev/null 2>&1; then
+	pol=$(iptables -S FORWARD 2>/dev/null | awk '/^-P FORWARD/{print $2}')
+	fw=$(iptables -S FORWARD 2>/dev/null | grep -c 'ap-relay')
+	echo "  iptables FORWARD: policy=${pol:-?} ap-relay规则=${fw:-0}"
+	if [ "$pol" = "DROP" ] && [ "${fw:-0}" -lt 2 ]; then
+		echo "  !! FORWARD 是 DROP 且缺少 ap-relay 放行（Docker 改了默认策略，见坑 22；sudo ap-fw.sh 修复）"
+	fi
+fi
 
 line; echo "[6] mihomo"
 echo "  版本 : $(/usr/local/bin/mihomo -v 2>/dev/null | head -1 | cut -c1-40)"

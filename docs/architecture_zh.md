@@ -43,7 +43,7 @@
 | `ap-hostapd` | `ExecStartPre` 建 AP 接口、渲染配置，然后起 hostapd | 最先（`After=network.target`） |
 | `ap-dnsmasq` | DHCP + 把 DNS 转发到 mihomo | `After=ap-hostapd` |
 | `ap-mihomo` | TUN + 规则分流；`ExecStartPost` 加策略路由，`ExecStopPost` 撤销 | `After=ap-hostapd`，`Before=ap-firewall` |
-| `ap-firewall` | `ip_forward` + NAT + 放行 AP 入站（oneshot，优先 nft） | 最后（`After=ap-hostapd, nftables`） |
+| `ap-firewall` | `ip_forward` + NAT + 放行 AP 入站 + 放行 iptables `FORWARD`（oneshot，优先 nft；防止 Docker 的 policy drop 挡住转发，见坑 22） | 最后（`After=ap-hostapd, nftables`） |
 
 ## 脚本
 
@@ -54,7 +54,7 @@
 | `ap-gen.sh` | hostapd `ExecStartPre` | 由 `ap-hotspot.conf` 渲染 `hostapd.conf` |
 | `ap-mode.sh` | 手动 | `24g` / `5g` 切换，轮询等待 AP 起来 |
 | `ap-render.sh` | 手动 | 用 `/etc/ap-relay.conf` 渲染模板里的 `${...}` 占位符 |
-| `ap-fw.sh` | `ap-firewall` | 开转发 + NAT + 放行 AP 入站（优先 nft，回退 iptables） |
+| `ap-fw.sh` | `ap-firewall` | 开转发 + NAT + 放行 AP 入站 + 放行 iptables `FORWARD`（优先 nft，回退 iptables） |
 | `ap-tun-route.sh` | mihomo `ExecStartPost` | 加 `ip rule` / table `$TABLE_ID` / `rp_filter=0` / 放行 TUN 入站 |
 | `ap-tun-unroute.sh` | mihomo `ExecStopPost` | 撤规则（流量回落内核转发） |
 | `ap-diag.sh` | 手动 | 一键体检 |

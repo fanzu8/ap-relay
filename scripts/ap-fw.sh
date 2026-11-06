@@ -37,6 +37,24 @@ cleanup_old_nat() {
 	fi
 }
 
+# 放行 AP ↔ TUN 的转发（iptables 侧）。
+#
+# 为什么需要：dockerd 启动时会把 ip filter 的 FORWARD 默认策略设为 DROP，
+# 并插入 DOCKER-USER / DOCKER-FORWARD。nft 的 inet filter 与 iptables 的
+# ip filter 是两张独立的表，inet 里的 accept 覆盖不了 iptables 的 policy drop。
+# 结果是策略路由、TUN、mihomo 都正常，客户端包却在 forward 阶段被丢掉
+# （见 docs/pitfalls.md 坑 22）。
+#
+# 用 -I FORWARD 1 插到最前面：即使 Docker 在本脚本之后启动、把它的链插到
+# 更前面，这两条仍然位于 policy drop 之前，照样生效。
+allow_forward_iptables() {
+	command -v iptables >/dev/null 2>&1 || return 0
+	while iptables -w -D FORWARD -i "$AP_IF" -m comment --comment "ap-relay" -j ACCEPT 2>/dev/null; do :; done
+	while iptables -w -D FORWARD -i "$TUN_DEV" -m comment --comment "ap-relay" -j ACCEPT 2>/dev/null; do :; done
+	iptables -w -I FORWARD 1 -i "$AP_IF" -m comment --comment "ap-relay" -j ACCEPT
+	iptables -w -I FORWARD 1 -i "$TUN_DEV" -m comment --comment "ap-relay" -j ACCEPT
+}
+
 # 放行 AP 入站（DHCP/DNS 之外，面板、SSH 等也依赖这条）。
 # 只有 inet filter 表存在时才加；没有这张表时系统默认策略通常就是 accept。
 allow_ap_input_nft() {
@@ -82,3 +100,7 @@ else
 	echo "ap-fw: 需要 nft 或 iptables（Alpine / postmarketOS 安装 nftables 即可）" >&2
 	exit 1
 fi
+
+# NAT 之后统一补 iptables 转发放行：无论 NAT 走 nft 还是 iptables，
+# Docker 的 FORWARD policy drop 都会影响同一条转发路径。
+allow_forward_iptables

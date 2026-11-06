@@ -393,3 +393,68 @@ immediately and fall back faster.
 
 **If your provider's UDP works**: do not block it; delete this rule and enjoy
 better QUIC performance.
+
+---
+
+## 22. Docker changes the iptables `FORWARD` policy to DROP → hotspot clients lose all connectivity
+
+**Symptom**: clients join the Wi-Fi, get an IP, and DNS returns fake IPs, but the
+TUN's `rx_packets` barely increases and `/connections` stays empty. Disabling
+mihomo and falling back to kernel forwarding does not help either. It looks like
+"policy routing is broken", yet `ip rule` and `ip route show table $TABLE_ID`
+are both correct.
+
+**How to confirm**:
+
+```sh
+iptables -S FORWARD | head
+iptables -L FORWARD -v -n | head -3
+```
+
+A typical Docker setup:
+
+```
+-P FORWARD DROP
+-A FORWARD -j DOCKER-USER
+-A FORWARD -j DOCKER-FORWARD
+Chain FORWARD (policy DROP 27196 packets, 2582K bytes)
+```
+
+**Cause**: when `dockerd` starts it sets the `FORWARD` policy of the
+`ip filter` table to `DROP` and inserts its own `DOCKER-USER` /
+`DOCKER-FORWARD` chains. nft's `inet filter` and iptables' `ip filter` are
+**two separate tables**; an `accept` in `inet` cannot override the other table's
+`policy drop`. Policy routing points the packets at the TUN, but iptables drops
+them in the `forward` stage first.
+
+**Fix**:
+
+```sh
+sudo iptables -I FORWARD 1 -i "$AP_IF"  -m comment --comment "ap-relay" -j ACCEPT
+sudo iptables -I FORWARD 1 -i "$TUN_DEV" -m comment --comment "ap-relay" -j ACCEPT
+```
+
+`ap-fw.sh` already includes both rules (idempotent; rerun it to restore them):
+
+```sh
+sudo ap-fw.sh
+```
+
+**Why it seems to break "after a reboot"**: Docker's iptables rules are not
+persisted to disk; every `dockerd` start sets the `FORWARD` policy back to
+`DROP`. It does not overwrite your rules — it resets the default policy on every
+boot. `ap-firewall.service` is a oneshot and runs once at boot; it does not
+re-check after Docker starts. That is why the accept rules must be added by
+`ap-firewall` itself and inserted at the head of the chain, so Docker's
+later-inserted chains cannot sit in front of them.
+
+**Do not**:
+
+- Do not set `"iptables": false` to disable Docker's iptables management as a
+  workaround — container networking and NAT will break too.
+- Adding an `accept` only to nft `inet filter forward` is not enough; it cannot
+  override iptables' `policy drop` (the repo's `51_hotspot.nft` template does
+  exactly that and must be paired with the iptables allow rules from
+  `ap-fw.sh`).
+- No timer is needed: the rules sit at the head of the `FORWARD` chain, so a
+  later Docker start cannot bypass them.

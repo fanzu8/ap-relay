@@ -354,3 +354,61 @@ iifname "${AP_IF}" udp dport ${QUIC_PORT} counter reject
 用 `reject`（ICMP port unreachable）而不是 `drop`，客户端能立刻知道不通，回落更快。
 
 **如果你的机场 UDP 正常**：不要封，删掉这条规则即可，QUIC 体验更好。
+
+---
+
+## 22. Docker 把 iptables `FORWARD` 策略改成 DROP → 热点客户端完全不通
+
+**现象**：客户端能连上 Wi-Fi、能拿到 IP、DNS 也能返回假 IP，但 TUN 的
+`rx_packets` 几乎不涨，`/connections` 是空的；把 mihomo 停掉走内核转发也不通。
+看起来像“策略路由失效”，但 `ip rule` / `ip route show table $TABLE_ID` 都正常。
+
+**判定**：
+
+```sh
+iptables -S FORWARD | head
+iptables -L FORWARD -v -n | head -3
+```
+
+典型的 Docker 现场：
+
+```
+-P FORWARD DROP
+-A FORWARD -j DOCKER-USER
+-A FORWARD -j DOCKER-FORWARD
+Chain FORWARD (policy DROP 27196 packets, 2582K bytes)
+```
+
+**原因**：`dockerd` 启动时会把 `ip filter` 表的 `FORWARD` 默认策略设成
+`DROP`，再插入自己的 `DOCKER-USER` / `DOCKER-FORWARD`。nft 的
+`inet filter` 和 iptables 的 `ip filter` 是**两张独立的表**，`inet` 里的
+`accept` 不能覆盖另一张表的 `policy drop`。所以策略路由把包指到了 TUN，
+包却在 `forward` 阶段先被 iptables 丢掉了。
+
+**修复**：
+
+```sh
+sudo iptables -I FORWARD 1 -i "$AP_IF"  -m comment --comment "ap-relay" -j ACCEPT
+sudo iptables -I FORWARD 1 -i "$TUN_DEV" -m comment --comment "ap-relay" -j ACCEPT
+```
+
+`ap-fw.sh` 已内置这两条（幂等，重跑即可恢复）：
+
+```sh
+sudo ap-fw.sh
+```
+
+**为什么“重启后才坏”**：Docker 的 iptables 规则不落盘，每次 `dockerd`
+启动都会重新把 `FORWARD` 策略设成 `DROP`。它不是覆盖你写的规则，而是每次
+开机都把默认策略重新设成 `DROP`。`ap-firewall.service` 是 oneshot，只在
+开机跑一次，不会在 Docker 起来后再复查——所以放行规则必须在
+`ap-firewall` 里主动补上，并插在链首，避免被 Docker 后插入的链挡在前面。
+
+**不要这样做**：
+
+- 不要用 `"iptables": false` 关掉 Docker 的 iptables 管理来“绕过”——
+  容器网络和 NAT 会一起坏掉。
+- 只加 nft `inet filter forward` 的 `accept` 不够；它管不到 iptables 的
+  `policy drop`（本仓库的 `51_hotspot.nft` 模板就是如此，必须配合
+  `ap-fw.sh` 的 iptables 放行）。
+- 不需要加定时器轮询：规则插在 `FORWARD` 链首，Docker 之后启动也挡不住它。

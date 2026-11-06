@@ -39,8 +39,25 @@ cat /sys/class/net/<TUN>/statistics/rx_packets   # TUN 有没有收包
 
 1. 没有租约 → DHCP 问题（dnsmasq 没起 / 接口不匹配）
 2. DNS 不返回假 IP → mihomo DNS 没起，或 dnsmasq 上游不是 `$DNS_PORT`
-3. 有假 IP 但 TUN 计数不涨 → 策略路由没生效
+3. 有假 IP 但 TUN 计数不涨 → 策略路由没生效，或包在 forward 阶段被 iptables 丢了（装了 Docker 时见坑 22）
 4. TUN 有包但连不上 → **先查防火墙 input 链是否放行 TUN**（见下）
+
+### TUN 完全没有流量（包没进 TUN）
+
+先确认策略路由在，再看是不是被 iptables 的 `FORWARD` 策略丢了：
+
+```sh
+ip rule show | grep iif
+iptables -S FORWARD | head
+iptables -L FORWARD -v -n | head -3
+```
+
+如果看到 `-P FORWARD DROP`，且没有 `ap-relay` 的放行规则，就是 Docker 把
+默认策略改成了 DROP（坑 22）。修复：
+
+```sh
+sudo ap-fw.sh     # 脚本会幂等补上 AP_IF 和 TUN_DEV 的 FORWARD 放行
+```
 
 ### TUN 有流量，但 mihomo 连接表是空的
 
