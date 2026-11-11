@@ -1,14 +1,19 @@
 #!/bin/sh
 # 一键体检。排障先跑这个，别一条条猜。
 # 用法：sudo ap-diag.sh [连接明细条数，默认 10]
-. "$(dirname "$0")/lib.sh"
+#
+# 本脚本只读：变量来自 lib.sh，secret 解析复用 mihomo 能力层，
+# 保证与 refresh / reload 用同一套解析规则（能正确处理引号）。
+here=$(dirname "$0")
+. "$here/lib.sh"
+. "$here/mihomo-lib.sh"
 
 # 依赖检查：缺工具时给出提示，而不是输出一堆空行
 for c in curl nslookup systemctl nft; do
 	command -v "$c" >/dev/null 2>&1 || echo "ap-diag: 警告：缺少 $c，相关检查会被跳过" >&2
 done
 
-SECRET=$(grep '^secret:' /etc/mihomo/config.yaml 2>/dev/null | awk '{print $2}')
+SECRET=$(mihomo_secret) || SECRET=
 API=http://127.0.0.1:$UI_PORT
 N=${1:-10}
 line() { printf '%s\n' "------------------------------------------------------------"; }

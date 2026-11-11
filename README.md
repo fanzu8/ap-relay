@@ -80,13 +80,16 @@ not bundled.
 
 ```
 ap-relay/
-├── scripts/            # 9 scripts + shared variables (installed to /usr/local/bin)
+├── scripts/            # AP scripts + mihomo config/capability/render/verify/apply layers
 ├── templates/          # config templates (global vars / hotspot / mihomo / nft / systemd)
+├── platforms/
+│   └── padavan/        # MI-R3G router runtime scripts, hooks and variables (former mihomo-padavan)
 ├── docs/
 │   ├── architecture.md # data flow and layering
 │   ├── architecture_zh.md
 │   ├── pitfalls.md     # 21 real pitfalls (the core value of this project)
 │   ├── pitfalls_zh.md
+│   ├── pitfalls_padavan_zh.md   # Padavan-specific pitfalls
 │   ├── troubleshooting.md
 │   ├── troubleshooting_zh.md
 │   ├── porting.md      # what to change on another machine/distro
@@ -96,15 +99,30 @@ ap-relay/
     └── README_zh.md
 ```
 
+The phone and the router share one `templates/mihomo.config.yaml` and one set of
+`scripts/mihomo-*.sh`; platform differences live only in the variable files
+(phone `/etc/ap-relay.conf`, router `/etc/storage/mihomo.conf`).
+
+The shared scripts are layered so each file has exactly one job:
+
+| Layer | Files | Responsibility |
+|---|---|---|
+| Config | `mihomo-vars.sh` | Load platform/private variables, apply defaults. Data only, no logic. |
+| Capability | `mihomo-lib.sh` | Locate config/binary, read `secret`, restart, wait for ports, call the REST API. |
+| Pure transforms | `mihomo-render.sh`, `mihomo-verify.sh` | Template → config, and config → pass/fail. No writes to live config. |
+| Orchestration | `mihomo-apply.sh`, `mihomo-reload.sh`, `mihomo-refresh.sh` | Compose the layers; the only files that touch a running instance. |
+
+Padavan adds one platform layer, `platforms/padavan/scripts/mihomo-env.sh`
+(paths, ports, PID/log locations, iptables chain names), so its runtime scripts
+do not each repeat those constants.
+
 ## Quick start (overview)
 
 1. Install dependencies (mihomo / hostapd / dnsmasq / nftables).
-2. Copy `scripts/*` to `/usr/local/bin` and `templates/ap-relay.conf` to `/etc/`.
+2. Copy `scripts/*.sh` to `/usr/local/bin` and `templates/ap-relay.conf` to `/etc/`.
 3. Edit `/etc/ap-relay.conf` and `/etc/ap-hotspot.conf` for your environment.
-4. Render the mihomo / nft templates with `ap-render.sh` (ports and interface
-   names are substituted automatically).
-5. Put your provider file and geo data in place (see the comments in
-   `templates/mihomo.config.yaml`).
+4. Put `SECRET` and `SUB_URL` in `/etc/ap-relay.local.conf` (mode 600).
+5. Preview with `mihomo-apply.sh --dry-run`, then apply with `mihomo-apply.sh`.
 6. `systemctl enable --now ap-hostapd ap-dnsmasq ap-mihomo ap-firewall`.
 
 See **[examples/README.md](examples/README.md)** for the complete walkthrough and
@@ -113,9 +131,24 @@ verification commands.
 > Ports are centralized in `/etc/ap-relay.conf`: `GLOBAL_PORT`, `UI_PORT`,
 > `DNS_PORT`, `DNS_STD_PORT`, `DHCP_PORT`, `QUIC_PORT`, plus the sniffer ports
 > `HTTP_PORT` / `HTTP_ALT_START` / `HTTP_ALT_END` / `TLS_PORT` / `TLS_ALT_PORT`.
-> Defaults follow common Clash / mihomo conventions: `7890` (mixed),
-> `9090` (controller), `53` (DNS). `${...}` placeholders in templates are
-> rendered by `ap-render.sh`, which makes global replacement easy.
+> Defaults are the validated set: `1008` (mixed), `7070` (controller), `1053`
+> (mihomo DNS, avoiding the upstream's possible 53 hijack). The mihomo config is
+> rendered by `mihomo-render.sh` from `templates/mihomo.config.yaml`; it rejects
+> undefined placeholders and forces mode 600.
+
+## Subscription and geo auto-update
+
+- `proxy-providers` uses `type: http`: the mihomo core downloads the
+  subscription itself every `SUB_INTERVAL` (default 6h) — no cron, no external
+  update script.
+- `GEO_AUTO_UPDATE=true` / `GEO_UPDATE_INTERVAL=2160` (90 days) keeps geo data
+  fresh. At least one geo file (e.g. `geoip.metadb`) must already exist in the
+  data dir, otherwise the updater is never registered.
+- `SUB_URL` and `SECRET` live only on the device: phone
+  `/etc/ap-relay.local.conf`, router `/etc/storage/mihomo.local.conf` (mode 600).
+  The repo, templates and platform variable files contain no real values.
+- Refresh now: `mihomo-refresh.sh`; rules/groups only: `mihomo-reload.sh`;
+  variable or startup-only changes: `mihomo-apply.sh` (restarts and waits for ports).
 
 ## Design notes
 
@@ -178,6 +211,7 @@ power management are out of scope for this project. Consider
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | Data flow, service dependencies, ports and addresses |
 | [docs/pitfalls.md](docs/pitfalls.md) | 21 real pitfalls and how to verify them |
+| [docs/pitfalls_padavan_zh.md](docs/pitfalls_padavan_zh.md) | Padavan / MI-R3G pitfalls (Chinese) |
 | [docs/troubleshooting.md](docs/troubleshooting.md) | Symptom → command → interpretation |
 | [docs/porting.md](docs/porting.md) | What to change on another machine/distro |
 
@@ -187,8 +221,9 @@ power management are out of scope for this project. Consider
 ## Status
 
 `v0.1.0` — fully validated on one OnePlus 6 (postmarketOS 25.12 / ath10k).
-Feedback for other hardware/distros is welcome, but **out-of-the-box operation is
-not guaranteed**.
+MI-R3G (Padavan) is the second platform under `platforms/padavan/`, sharing the
+same template and scripts as the phone. Feedback for other hardware/distros is
+welcome, but **out-of-the-box operation is not guaranteed**.
 
 ## Disclaimer
 

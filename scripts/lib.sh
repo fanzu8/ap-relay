@@ -25,10 +25,10 @@ TUN_DEV=${TUN_DEV:-meta}     # 必须与 mihomo 配置里的 tun.device 一致
 if [ -z "${GLOBAL_PORT:-}" ] && [ -n "${PROXY_PORT:-}" ]; then
 	GLOBAL_PORT=$PROXY_PORT
 fi
-GLOBAL_PORT=${GLOBAL_PORT:-7890}   # mixed（HTTP+SOCKS），必须与 mixed-port 一致
+GLOBAL_PORT=${GLOBAL_PORT:-1008}   # mixed（HTTP+SOCKS），必须与 mixed-port 一致
 PROXY_PORT=${PROXY_PORT:-$GLOBAL_PORT}  # 兼容旧变量名，等同 GLOBAL_PORT
-DNS_PORT=${DNS_PORT:-53}           # 必须与 mihomo 配置里的 dns.listen 端口一致
-UI_PORT=${UI_PORT:-9090}           # 面板 + REST API，必须与 external-controller 一致
+DNS_PORT=${DNS_PORT:-1053}         # 必须与 mihomo 配置里的 dns.listen 端口一致
+UI_PORT=${UI_PORT:-7070}           # 面板 + REST API，必须与 external-controller 一致
 DNS_STD_PORT=${DNS_STD_PORT:-53}   # dnsmasq 对客户端提供 DNS 的端口
 DHCP_PORT=${DHCP_PORT:-67}         # dnsmasq DHCP 端口
 QUIC_PORT=${QUIC_PORT:-443}        # 需要拦截的 QUIC 端口

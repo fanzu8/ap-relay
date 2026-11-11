@@ -75,13 +75,16 @@
 
 ```
 ap-relay/
-├── scripts/            # 9 个脚本 + 公共变量（装到 /usr/local/bin）
+├── scripts/            # AP 脚本 + mihomo 配置/能力/渲染/校验/编排分层（装到 /usr/local/bin）
 ├── templates/          # 配置模板（全局变量 / 热点 / mihomo / nft / systemd）
+├── platforms/
+│   └── padavan/        # MI-R3G 路由器运行时脚本、钩子、变量（原 mihomo-padavan）
 ├── docs/
 │   ├── architecture.md # 数据流与分层理由（英文）
 │   ├── architecture_zh.md
 │   ├── pitfalls.md     # 21 个坑（本项目的核心价值，英文）
 │   ├── pitfalls_zh.md
+│   ├── pitfalls_padavan_zh.md   # Padavan 侧踩坑记录
 │   ├── troubleshooting.md
 │   ├── troubleshooting_zh.md
 │   ├── porting.md
@@ -91,13 +94,29 @@ ap-relay/
     └── README_zh.md
 ```
 
+手机与路由器共用同一份 `templates/mihomo.config.yaml` 和同一套
+`scripts/mihomo-*.sh`；平台差异只在变量文件里（手机 `/etc/ap-relay.conf`，
+路由器 `/etc/storage/mihomo.conf`）。
+
+共用脚本按职责分层，一个文件只做一件事：
+
+| 层 | 文件 | 职责 |
+|---|---|---|
+| 配置层 | `mihomo-vars.sh` | 载入平台/私有变量并补默认值；只有数据，没有逻辑 |
+| 能力层 | `mihomo-lib.sh` | 定位配置/二进制、读 `secret`、重启、等端口、调用 REST API |
+| 纯转换层 | `mihomo-render.sh`、`mihomo-verify.sh` | 模板 → 配置、配置 → 通过/失败；不碰线上状态 |
+| 编排层 | `mihomo-apply.sh`、`mihomo-reload.sh`、`mihomo-refresh.sh` | 组合上面各层；只有这三个会操作运行中的实例 |
+
+Padavan 另有一层平台环境 `platforms/padavan/scripts/mihomo-env.sh`
+（路径、端口、PID/日志位置、iptables 链名），平台脚本不再各自重抄这些常量。
+
 ## 快速开始（概览）
 
 1. 装依赖（mihomo / hostapd / dnsmasq / nftables）
-2. 把 `scripts/*` 复制到 `/usr/local/bin`，`templates/ap-relay.conf` 复制到 `/etc/`
+2. 把 `scripts/*.sh` 复制到 `/usr/local/bin`，`templates/ap-relay.conf` 复制到 `/etc/`
 3. 按你的环境改 `/etc/ap-relay.conf` 和 `/etc/ap-hotspot.conf`
-4. 用 `ap-render.sh` 渲染 mihomo / nft 模板（端口、接口名会自动替换）
-5. 放好节点文件、geo 数据（见 `templates/mihomo.config.yaml` 注释）
+4. 在 `/etc/ap-relay.local.conf` 写入 `SECRET` 与 `SUB_URL`（权限 600）
+5. 用 `mihomo-apply.sh --dry-run` 预览渲染结果，确认后 `mihomo-apply.sh` 生效
 6. `systemctl enable --now ap-hostapd ap-dnsmasq ap-mihomo ap-firewall`
 
 完整步骤与验证命令见 **[examples/README_zh.md](examples/README_zh.md)**。
@@ -105,8 +124,10 @@ ap-relay/
 > 端口变量集中在 `/etc/ap-relay.conf`：`GLOBAL_PORT`、`UI_PORT`、`DNS_PORT`、
 > `DNS_STD_PORT`、`DHCP_PORT`、`QUIC_PORT`，以及 sniffer 用的
 > `HTTP_PORT` / `HTTP_ALT_START` / `HTTP_ALT_END` / `TLS_PORT` / `TLS_ALT_PORT`。
-> 默认值沿用 Clash / mihomo 社区常见值：`7890`（mixed）、`9090`（面板/API）、
-> `53`（DNS）。模板里的 `${...}` 占位符由 `ap-render.sh` 渲染，方便全局替换。
+> 默认值是实机验证过的一套：`1008`（mixed）、`7070`（面板/API）、
+> `1053`（mihomo DNS，避开上游可能劫持的 53）。mihomo 配置由
+> `mihomo-render.sh` 从 `templates/mihomo.config.yaml` 渲染，不再用 `ap-render.sh`
+> 直接替换（渲染脚本会校验未定义占位符并强制 600 权限）。
 
 ## 设计要点
 
@@ -115,6 +136,17 @@ ap-relay/
 2. **fake-ip + 域名规则前置**：`GEOSITE,google` 必须排在 `GEOIP,CN` 之前，否则 Google 系域名会被
    国内 DNS 解析出的 CDN IP 判成直连（见坑 19）。
 3. **QUIC 是否封锁取决于机场**：机场 UDP 中继不可用时必须封（坑 21），可用时不要封。
+
+## 订阅与 geo 自动更新
+
+- `proxy-providers` 用 `type: http`：mihomo 内核按 `SUB_INTERVAL`（默认 6h）自己拉订阅，
+  不需要 cron，也不需要外部更新脚本。
+- `GEO_AUTO_UPDATE=true` / `GEO_UPDATE_INTERVAL=2160`（90 天）让 geo 库自动更新。
+  前提是部署目录里至少已有一个 geo 文件（如 `geoip.metadb`），否则定时器不会注册。
+- `SUB_URL` 与 `SECRET` 只写在设备本机：手机 `/etc/ap-relay.local.conf`，
+  路由器 `/etc/storage/mihomo.local.conf`（权限 600）。仓库、模板、平台变量文件里都没有真实值。
+- 想立刻拉一次订阅：`mihomo-refresh.sh`；只改规则/分组：`mihomo-reload.sh`；
+  改了变量或启用项：`mihomo-apply.sh`（会重启并等待端口）。
 
 ## 脚本幂等性
 
@@ -158,6 +190,7 @@ ap-relay/
 |---|---|
 | [docs/architecture_zh.md](docs/architecture_zh.md) | 数据流、服务依赖、端口与地址 |
 | [docs/pitfalls_zh.md](docs/pitfalls_zh.md) | 21 个真实踩过的坑与验证方法 |
+| [docs/pitfalls_padavan_zh.md](docs/pitfalls_padavan_zh.md) | Padavan / MI-R3G 侧踩坑记录 |
 | [docs/troubleshooting_zh.md](docs/troubleshooting_zh.md) | 症状 → 命令 → 判断 |
 | [docs/porting_zh.md](docs/porting_zh.md) | 换机器/换发行版要改什么 |
 
@@ -166,7 +199,8 @@ ap-relay/
 
 ## 状态
 
-`v0.1.0` —— 在一台 OnePlus 6（postmarketOS 25.12 / ath10k）上完整验证。
+`v0.1.0` —— 在一台 OnePlus 6（postmarketOS 25.12 / ath10k）上完整验证；
+MI-R3G（Padavan）作为 `platforms/padavan/` 的第二个平台，与手机共用同一份模板和脚本。
 其他硬件/发行版欢迎反馈，但**不保证开箱可用**。
 
 ## 免责声明

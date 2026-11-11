@@ -62,18 +62,32 @@ Everything is centralized in `/etc/ap-relay.conf` (template:
 | `QUIC_PORT` | QUIC port to block |
 | `HTTP_PORT` / `HTTP_ALT_START` / `HTTP_ALT_END` | mihomo sniffer HTTP ports |
 | `TLS_PORT` / `TLS_ALT_PORT` | mihomo sniffer TLS/QUIC ports |
+| `DNS_LISTEN` | Full `dns.listen` value (phone `127.0.0.1:1053`, router `0.0.0.0:1053`) |
+| `REDIR_LINE` | `redir-port: 1009` in redirect mode; comment the line out for TUN |
+| `PROXY_SERVER_NS` | DoH used to resolve provider hostnames (must be DoH; pitfall 3) |
+| `TUN_ENABLE` / `TUN_STACK` / `TUN_AUTO_DETECT_INTERFACE` | Whether this platform uses TUN |
+| `SNIFFER_OVERRIDE_DESTINATION` / `SNIFFER_HTTP_PORTS` | true in redirect mode, false for TUN |
+| `GEO_AUTO_UPDATE` / `GEO_UPDATE_INTERVAL` | geo auto-update toggle and interval (hours) |
+| `PROVIDER_NAME` / `SUB_UA` / `SUB_INTERVAL` | Subscription provider name, UA, refresh interval |
+| `EXCLUDE_FILTER` / `HEALTH_CHECK_INTERVAL` | Node exclusion regex and health-check interval |
+| `SECRET` / `SUB_URL` | **Credentials: keep in the local `.local.conf`, never in the repo** |
 
-The mihomo / nft template placeholders no longer need to be edited by hand.
-Render them with `ap-render.sh`:
+The mihomo / nft template placeholders no longer need to be edited by hand:
 
 ```sh
-sudo ap-render.sh templates/mihomo.config.yaml /etc/mihomo/config.yaml
-sudo ap-render.sh templates/51_hotspot.nft     /etc/nftables.d/51_hotspot.nft
+# nft is still rendered by ap-render.sh
+sudo ap-render.sh templates/51_hotspot.nft /etc/nftables.d/51_hotspot.nft
+
+# mihomo uses a dedicated renderer (rejects unknown placeholders, forces mode 600,
+# writes .new then atomically replaces)
+sudo mihomo-apply.sh --dry-run     # preview
+sudo mihomo-apply.sh               # render + verify + backup + restart
 ```
 
 The `${GLOBAL_PORT}`, `${UI_PORT}`, `${DNS_PORT}`, `${DNS_STD_PORT}`,
 `${DHCP_PORT}`, `${QUIC_PORT}`, `${AP_IF}`, `${TUN_DEV}`, etc. placeholders all
-come from `/etc/ap-relay.conf`. Re-render after changing the config; no global
+come from `/etc/ap-relay.conf`; `SECRET` / `SUB_URL` come from
+`/etc/ap-relay.local.conf`. Re-render after changing the config; no global
 search-and-replace is needed.
 
 ## Do interface names change?
@@ -140,8 +154,9 @@ stability.
 - [ ] Firewall approach chosen and it does not conflict with the template
 - [ ] Interface names and subnet in `/etc/ap-relay.conf` match reality
 - [ ] mihomo `tun.device` / `dns.listen` match the config
-- [ ] nft / mihomo templates rendered with `ap-render.sh`
-- [ ] Dashboard secret changed
+- [ ] nft template rendered with `ap-render.sh`
+- [ ] mihomo rendered with `mihomo-apply.sh`; `mihomo-verify.sh` passes
+- [ ] Dashboard secret and subscription URL stored in `/etc/ap-relay.local.conf` (600)
 - [ ] `ap-diag.sh` reports no failures
 
 ## Known unsuitable cases

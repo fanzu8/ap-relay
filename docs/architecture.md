@@ -52,13 +52,43 @@
 | `lib.sh` | sourced by other scripts | Reads `/etc/ap-relay.conf`, provides defaults |
 | `ap-prep.sh` | hostapd `ExecStartPre` | Waits for uplink → creates AP interface → assigns IP (idempotent) |
 | `ap-gen.sh` | hostapd `ExecStartPre` | Renders `hostapd.conf` from `ap-hotspot.conf` |
-| `ap-render.sh` | manual | Renders `${...}` placeholders in templates from `/etc/ap-relay.conf` |
+| `ap-render.sh` | manual | Renders `${...}` placeholders in nft and other templates from `/etc/ap-relay.conf` |
+| `mihomo-vars.sh` | sourced by other scripts | Config layer: loads platform variables + `.local.conf`, provides defaults only |
+| `mihomo-lib.sh` | sourced by other scripts | Capability layer: config/binary lookup, secret, restart, port waiting, REST API |
+| `mihomo-render.sh` | manual / `mihomo-apply.sh` | Renders the mihomo template; rejects unknown placeholders and forces 600 |
+| `mihomo-verify.sh` | manual / `mihomo-apply.sh` | Structural checks + `mihomo -t` |
+| `mihomo-apply.sh` | manual | Render → verify → backup → replace → restart → wait for ports, rollback on failure |
+| `mihomo-refresh.sh` | manual / optional cron | Refreshes one provider immediately |
+| `mihomo-reload.sh` | manual | Validates then hot-reloads (`-f` falls back to restart) |
 | `ap-mode.sh` | manual | Switches `24g` / `5g`, polling until the AP is really up |
 | `ap-fw.sh` | `ap-firewall` | Enables forwarding + NAT + AP input + iptables `FORWARD` allows (nft first, iptables fallback) |
 | `ap-tun-route.sh` | mihomo `ExecStartPost` | Adds `ip rule` / table `$TABLE_ID` / `rp_filter=0` / TUN input allow |
 | `ap-tun-unroute.sh` | mihomo `ExecStopPost` | Removes the rules (traffic falls back to kernel forwarding) |
 | `ap-diag.sh` | manual | One-shot health check |
 | `ap-debug.sh` | manual | Switches mihomo log level |
+
+## Script layering
+
+The shared scripts form four layers, each unaware of the layers above it:
+
+```
+config      mihomo-vars.sh        variables + defaults (pure data)
+   │
+capability  mihomo-lib.sh         paths/ports/secret/API (pure functions)
+   │
+transform   mihomo-render.sh      template → config (atomic, mode 600)
+            mihomo-verify.sh      config → pass/fail (read-only)
+   │
+orchestration mihomo-apply.sh     render→verify→backup→swap→restart→wait→rollback
+              mihomo-reload.sh    verify → hot reload
+              mihomo-refresh.sh   refresh one provider now
+```
+
+Platform differences do not leak into the command scripts: the phone uses a
+variable file plus systemd; the router uses a variable file plus
+`platforms/padavan/scripts/mihomo-env.sh` (paths, ports, PID/log locations,
+iptables chain names). Porting to a new device only means adding those two
+platform pieces; render/verify/orchestration are reused unchanged.
 
 ## Addresses and ports
 
@@ -69,16 +99,17 @@
 | Uplink | from DHCP | STA or Ethernet |
 
 > Port variables come from `/etc/ap-relay.conf`; defaults are shown in parentheses.
-> Both dnsmasq and mihomo use `53` by default, but bind different addresses
-> (the AP interface vs `127.0.0.1`), so they do not conflict.
+> dnsmasq uses `53` and mihomo uses `1053` (avoiding a possible plaintext-53
+> upstream hijack); they bind the AP interface and `127.0.0.1` respectively, so
+> there is no conflict.
 
 | Port | Purpose |
 |---|---|
 | `$DNS_STD_PORT`/udp+tcp | dnsmasq (bound to the AP interface only; default 53) |
 | `$DHCP_PORT`/udp | dnsmasq DHCP (default 67) |
-| `$DNS_PORT` | mihomo fake-ip DNS (listens on 127.0.0.1 only; default 53) |
-| `$GLOBAL_PORT` | mihomo mixed (HTTP+SOCKS; default 7890) |
-| `$UI_PORT` | Dashboard + REST API (default 9090; set a secret and restrict sources) |
+| `$DNS_PORT` | mihomo fake-ip DNS (listens on 127.0.0.1 only; default 1053) |
+| `$GLOBAL_PORT` | mihomo mixed (HTTP+SOCKS; default 1008) |
+| `$UI_PORT` | Dashboard + REST API (default 7070; set a secret and restrict sources) |
 
 ## The three TUN stacks
 

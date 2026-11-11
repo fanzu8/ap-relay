@@ -49,11 +49,16 @@ sudo install -m 755 scripts/*.sh /usr/local/bin/
 sudo install -m 644 templates/ap-relay.conf   /etc/ap-relay.conf
 sudo install -m 600 templates/ap-hotspot.conf /etc/ap-hotspot.conf
 sudo install -m 644 templates/systemd/*.service /etc/systemd/system/
+sudo mkdir -p /usr/local/share/ap-relay
+sudo install -m 644 templates/mihomo.config.yaml /usr/local/share/ap-relay/
 sudo mkdir -p /etc/hostapd
 sudo systemctl daemon-reload
 ```
 
-## 3. Edit the two configs
+`mihomo-apply.sh` looks for the template there by default; you can also pass a
+path explicitly.
+
+## 3. Edit the configs
 
 ```sh
 sudo vi /etc/ap-relay.conf     # interface names, subnet, TUN name, ports
@@ -66,27 +71,48 @@ At minimum, confirm:
 - `AP_IF` does not collide with an existing interface
 - `UPLINK_IF` is correct (use `eth0` for a wired uplink)
 
+Keep credentials in a separate root-only file:
+
+```sh
+sudo install -m 600 /dev/null /etc/ap-relay.local.conf
+sudo tee /etc/ap-relay.local.conf >/dev/null <<'EOF'
+SECRET='CHANGE_ME_DASHBOARD_SECRET'
+SUB_URL='https://example.com/link/CHANGE_ME?clash=1'
+EOF
+```
+
+> Do not put `SECRET` or `SUB_URL` in `/etc/ap-relay.conf`, and never commit
+> them to the repository.
+
 ## 4. Configure mihomo
 
 ```sh
 sudo mkdir -p /etc/mihomo/providers
-# Render the template first: ports/interfaces are substituted from /etc/ap-relay.conf
-# Note: this overwrites the output file. Re-render before re-applying custom edits.
-sudo ap-render.sh templates/mihomo.config.yaml /etc/mihomo/config.yaml
-sudo chmod 600 /etc/mihomo/config.yaml
-sudo vi /etc/mihomo/config.yaml      # change secret; adjust provider paths
+# Preview: render + verify + diff, without touching the live config
+sudo mihomo-apply.sh --dry-run
+
+# Apply: render -> verify -> backup -> replace -> restart -> wait for ports
+sudo mihomo-apply.sh
 ```
 
-Put the provider file at `/etc/mihomo/providers/provider_a.yaml` (the format is
-mihomo's `proxies:` list).
+Notes:
 
-Keep geo data local so startup does not need to download it:
+- The provider is `type: http`: on first start mihomo downloads the nodes from
+  `SUB_URL` into `path`, so you do not place `providers/*.yaml` by hand.
+- `SECRET` / `SUB_URL` come from `/etc/ap-relay.local.conf`; the rendered
+  `/etc/mihomo/config.yaml` is forced to mode 600.
+- After editing `/etc/ap-relay.conf`, rerun `mihomo-apply.sh`. Do not edit the
+  generated file.
+
+Keep geo data local so startup does not need to download it (and so
+`geo-auto-update` has a file to register against):
 
 ```sh
 sudo curl -L -o /etc/mihomo/geoip.metadb \
   https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb
 sudo curl -L -o /etc/mihomo/geosite.dat \
   https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat
+sudo chown root:root /etc/mihomo/geoip.metadb /etc/mihomo/geosite.dat
 ```
 
 Optional: dashboard (static files only)
@@ -132,6 +158,9 @@ nslookup www.example.com <AP_IP>        # expect 198.18.x.x
 # proxy itself (without going through the hotspot)
 curl -x 127.0.0.1:$GLOBAL_PORT -o /dev/null -w '%{http_code}\n' https://www.example.com
 # egress IP: visit any "what is my IP" site; it should show the node's location
+
+# subscription: confirm it is an HTTP provider and nodes are downloaded
+sudo mihomo-refresh.sh
 
 # one-shot health check
 sudo ap-diag.sh

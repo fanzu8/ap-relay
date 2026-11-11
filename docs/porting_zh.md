@@ -61,17 +61,31 @@ systemctl is-active firewalld ufw nftables
 | `QUIC_PORT` | 需要拦截的 QUIC 端口 |
 | `HTTP_PORT` / `HTTP_ALT_START` / `HTTP_ALT_END` | mihomo sniffer HTTP 端口 |
 | `TLS_PORT` / `TLS_ALT_PORT` | mihomo sniffer TLS/QUIC 端口 |
+| `DNS_LISTEN` | `dns.listen` 的完整值（手机 `127.0.0.1:1053`，路由器 `0.0.0.0:1053`） |
+| `REDIR_LINE` | redirect 模式填 `redir-port: 1009`；TUN 模式整行注释掉 |
+| `PROXY_SERVER_NS` | 解析节点域名用的 DoH（必须是 DoH，见坑 3） |
+| `TUN_ENABLE` / `TUN_STACK` / `TUN_AUTO_DETECT_INTERFACE` | 该平台是否走 TUN |
+| `SNIFFER_OVERRIDE_DESTINATION` / `SNIFFER_HTTP_PORTS` | redirect 为 true，TUN 为 false |
+| `GEO_AUTO_UPDATE` / `GEO_UPDATE_INTERVAL` | geo 自动更新开关与间隔（小时） |
+| `PROVIDER_NAME` / `SUB_UA` / `SUB_INTERVAL` | 订阅 provider 的名字、UA、拉取间隔 |
+| `EXCLUDE_FILTER` / `HEALTH_CHECK_INTERVAL` | 节点排除正则与测速间隔 |
+| `SECRET` / `SUB_URL` | **凭据，放本机 `.local.conf`，不进仓库** |
 
-mihomo / nft 模板里的端口/接口占位符不再需要手工改，统一用 `ap-render.sh` 渲染：
+mihomo / nft 模板里的占位符不再需要手工改：
 
 ```sh
-sudo ap-render.sh templates/mihomo.config.yaml /etc/mihomo/config.yaml
-sudo ap-render.sh templates/51_hotspot.nft     /etc/nftables.d/51_hotspot.nft
+# nft 仍由 ap-render.sh 渲染
+sudo ap-render.sh templates/51_hotspot.nft /etc/nftables.d/51_hotspot.nft
+
+# mihomo 用专用渲染脚本（会校验未定义占位符、强制 600、先写 .new 再原子替换）
+sudo mihomo-apply.sh --dry-run     # 预览
+sudo mihomo-apply.sh               # 渲染 + 校验 + 备份 + 重启
 ```
 
 模板中的 `${GLOBAL_PORT}`、`${UI_PORT}`、`${DNS_PORT}`、`${DNS_STD_PORT}`、
 `${DHCP_PORT}`、`${QUIC_PORT}`、`${AP_IF}`、`${TUN_DEV}` 等变量都来自
-`/etc/ap-relay.conf`。改配置后重新渲染即可，不需要全局搜索替换。
+`/etc/ap-relay.conf`；`SECRET` / `SUB_URL` 来自 `/etc/ap-relay.local.conf`。
+改配置后重新渲染即可，不需要全局搜索替换。
 
 ## 接口名会变吗
 
@@ -134,8 +148,9 @@ unmanaged-devices=interface-name:<AP_IF>
 - [ ] 防火墙方案确定，且不会与模板冲突
 - [ ] `/etc/ap-relay.conf` 的接口名、网段与实际一致
 - [ ] mihomo 的 `tun.device` / `dns.listen` 与配置一致
-- [ ] nft / mihomo 模板已用 `ap-render.sh` 渲染
-- [ ] 面板 secret 已改
+- [ ] nft 模板已用 `ap-render.sh` 渲染
+- [ ] mihomo 已用 `mihomo-apply.sh` 渲染，`mihomo-verify.sh` 通过
+- [ ] 面板 secret、订阅地址已写入 `/etc/ap-relay.local.conf`（600）
 - [ ] `ap-diag.sh` 全绿
 
 ## 已知不适合的情况

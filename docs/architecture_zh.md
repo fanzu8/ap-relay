@@ -53,12 +53,40 @@
 | `ap-prep.sh` | hostapd `ExecStartPre` | 等上行接口 → 建 AP 接口 → 配 IP（幂等） |
 | `ap-gen.sh` | hostapd `ExecStartPre` | 由 `ap-hotspot.conf` 渲染 `hostapd.conf` |
 | `ap-mode.sh` | 手动 | `24g` / `5g` 切换，轮询等待 AP 起来 |
-| `ap-render.sh` | 手动 | 用 `/etc/ap-relay.conf` 渲染模板里的 `${...}` 占位符 |
+| `ap-render.sh` | 手动 | 用 `/etc/ap-relay.conf` 渲染 nft 等模板里的 `${...}` 占位符 |
+| `mihomo-vars.sh` | 被其它脚本 source | 配置层：载入平台变量 + `.local.conf`，只补默认值 |
+| `mihomo-lib.sh` | 被其它脚本 source | 能力层：定位配置/二进制、读 secret、重启、等端口、调用 REST API |
+| `mihomo-render.sh` | 手动 / `mihomo-apply.sh` | 渲染 mihomo 模板，拒绝未定义占位符，输出强制 600 |
+| `mihomo-verify.sh` | 手动 / `mihomo-apply.sh` | 结构自检 + `mihomo -t` |
+| `mihomo-apply.sh` | 手动 | 渲染 → 校验 → 备份 → 替换 → 重启 → 等端口，失败回滚 |
+| `mihomo-refresh.sh` | 手动 / 定时可选 | 立刻刷新一个 provider |
+| `mihomo-reload.sh` | 手动 | 校验后热重载配置（`-f` 回退重启） |
 | `ap-fw.sh` | `ap-firewall` | 开转发 + NAT + 放行 AP 入站 + 放行 iptables `FORWARD`（优先 nft，回退 iptables） |
 | `ap-tun-route.sh` | mihomo `ExecStartPost` | 加 `ip rule` / table `$TABLE_ID` / `rp_filter=0` / 放行 TUN 入站 |
 | `ap-tun-unroute.sh` | mihomo `ExecStopPost` | 撤规则（流量回落内核转发） |
 | `ap-diag.sh` | 手动 | 一键体检 |
 | `ap-debug.sh` | 手动 | 切换 mihomo 日志级别 |
+
+## 脚本分层
+
+共用脚本按依赖方向分四层，下层不知道上层的存在：
+
+```
+配置层  mihomo-vars.sh        变量与默认值（纯数据）
+   │
+能力层  mihomo-lib.sh         路径/端口/secret/API（纯函数，不读配置）
+   │
+转换层  mihomo-render.sh      模板 → 配置（原子替换、600）
+        mihomo-verify.sh      配置 → 通过/失败（只读）
+   │
+编排层  mihomo-apply.sh       渲染→校验→备份→替换→重启→等端口→回滚
+        mihomo-reload.sh      校验→热重载
+        mihomo-refresh.sh     立刻刷新 provider
+```
+
+平台差异不在命令脚本里：手机是变量文件 + systemd，路由器是变量文件 +
+`platforms/padavan/scripts/mihomo-env.sh`（路径、端口、PID/日志、链名）。
+这样新增设备时只需要补“变量文件 + 环境层 + 启动方式”，渲染、校验、编排完全复用。
 
 ## 地址与端口
 
@@ -69,15 +97,16 @@
 | 上行 | 由 DHCP 获得 | STA 或以太网 |
 
 > 端口变量来自 `/etc/ap-relay.conf`，括号内是默认值。
-> dnsmasq 和 mihomo 默认都用 `53`，但分别绑定 AP 接口和 `127.0.0.1`，不会冲突。
+> dnsmasq 用 `53`，mihomo 用 `1053`（避开上游可能劫持的明文 53），
+> 两者分别绑定 AP 接口和 `127.0.0.1`，不会冲突。
 
 | 端口 | 说明 |
 |---|---|
 | `$DNS_STD_PORT`/udp+tcp | dnsmasq（只绑 AP 接口，默认 53） |
 | `$DHCP_PORT`/udp | dnsmasq DHCP（默认 67） |
-| `$DNS_PORT` | mihomo fake-ip DNS（只监听 127.0.0.1，默认 53） |
-| `$GLOBAL_PORT` | mihomo mixed（HTTP+SOCKS，默认 7890） |
-| `$UI_PORT` | 面板 + REST API（默认 9090；务必设 secret 并限制来源） |
+| `$DNS_PORT` | mihomo fake-ip DNS（只监听 127.0.0.1，默认 1053） |
+| `$GLOBAL_PORT` | mihomo mixed（HTTP+SOCKS，默认 1008） |
+| `$UI_PORT` | 面板 + REST API（默认 7070；务必设 secret 并限制来源） |
 
 ## 三种 TUN 栈
 

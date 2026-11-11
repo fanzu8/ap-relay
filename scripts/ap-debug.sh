@@ -1,7 +1,11 @@
 #!/bin/sh
 # 用法: ap-debug.sh on|off —— 切换 mihomo 日志级别（只改运行时，重启回 info）
-. "$(dirname "$0")/lib.sh"
-SECRET=$(grep '^secret:' /etc/mihomo/config.yaml 2>/dev/null | awk '{print $2}')
+#
+# secret 解析复用能力层，避免每个脚本各抄一套（引号处理也一致）。
+here=$(dirname "$0")
+. "$here/lib.sh"
+. "$here/mihomo-lib.sh"
+SECRET=$(mihomo_secret) || SECRET=
 case "${1:-}" in
   on)  L=debug ;;
   off) L=info ;;

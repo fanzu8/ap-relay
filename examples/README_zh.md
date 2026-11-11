@@ -44,14 +44,18 @@ sudo install -m 755 scripts/*.sh /usr/local/bin/
 sudo install -m 644 templates/ap-relay.conf   /etc/ap-relay.conf
 sudo install -m 600 templates/ap-hotspot.conf /etc/ap-hotspot.conf
 sudo install -m 644 templates/systemd/*.service /etc/systemd/system/
+sudo mkdir -p /usr/local/share/ap-relay
+sudo install -m 644 templates/mihomo.config.yaml /usr/local/share/ap-relay/
 sudo mkdir -p /etc/hostapd
 sudo systemctl daemon-reload
 ```
 
-## 3. 改两个配置
+`mihomo-apply.sh` 默认从这里找模板；也可以显式传路径。
+
+## 3. 改配置
 
 ```sh
-sudo vi /etc/ap-relay.conf     # 接口名、网段、TUN 名
+sudo vi /etc/ap-relay.conf     # 接口名、网段、TUN 名、端口
 sudo vi /etc/ap-hotspot.conf   # SSID、密码、频段、信道
 ```
 
@@ -61,26 +65,45 @@ sudo vi /etc/ap-hotspot.conf   # SSID、密码、频段、信道
 - `AP_IF` 不与已有接口重名
 - `UPLINK_IF` 正确（有线上行改成 `eth0`）
 
+凭据单独放一个只有 root 能读的文件：
+
+```sh
+sudo install -m 600 /dev/null /etc/ap-relay.local.conf
+sudo tee /etc/ap-relay.local.conf >/dev/null <<'EOF'
+SECRET='CHANGE_ME_DASHBOARD_SECRET'
+SUB_URL='https://example.com/link/CHANGE_ME?clash=1'
+EOF
+```
+
+> `SECRET` 和 `SUB_URL` 不要写进 `/etc/ap-relay.conf`，更不要提交到仓库。
+
 ## 4. 配 mihomo
 
 ```sh
 sudo mkdir -p /etc/mihomo/providers
-# 先渲染模板，端口/接口占位符会自动替换成 /etc/ap-relay.conf 里的值
-# 注意：输出文件会被整体覆盖；重新渲染前先备份自己的修改
-sudo ap-render.sh templates/mihomo.config.yaml /etc/mihomo/config.yaml
-sudo chmod 600 /etc/mihomo/config.yaml
-sudo vi /etc/mihomo/config.yaml      # 改 secret；节点路径按实际
+# 预览：渲染 + 校验 + 差异，不动线上配置
+sudo mihomo-apply.sh --dry-run
+
+# 确认无误后生效：渲染 → 校验 → 备份 → 替换 → 重启 → 等端口
+sudo mihomo-apply.sh
 ```
 
-节点文件放 `/etc/mihomo/providers/provider_a.yaml`（格式就是 mihomo 的 `proxies:` 列表）。
+说明：
 
-geo 数据放本地，避免启动时联网拉取：
+- provider 是 `type: http`，首次启动时 mihomo 会自己按 `SUB_URL` 下载节点到
+  `path`，不需要手工放 `providers/*.yaml`。
+- `SECRET` / `SUB_URL` 从 `/etc/ap-relay.local.conf` 注入；渲染出的
+  `/etc/mihomo/config.yaml` 会被强制设为 600。
+- 改完 `/etc/ap-relay.conf` 后重新执行 `mihomo-apply.sh` 即可，不要手改生成物。
+
+geo 数据放本地，避免首次启动时联网拉取（`geo-auto-update` 也需要目录里先有一个 geo 文件）：
 
 ```sh
 sudo curl -L -o /etc/mihomo/geoip.metadb \
   https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb
 sudo curl -L -o /etc/mihomo/geosite.dat \
   https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat
+sudo chown root:root /etc/mihomo/geoip.metadb /etc/mihomo/geosite.dat
 ```
 
 可选：面板（纯静态）
@@ -128,6 +151,9 @@ nslookup www.example.com <AP_IP>        # 期望 198.18.x.x
 # 代理本身（不经过热点）
 curl -x 127.0.0.1:$GLOBAL_PORT -o /dev/null -w '%{http_code}\n' https://www.example.com
 # 出口 IP：访问任意“查询我的 IP”网站，应显示节点所在地
+
+# 订阅：确认是 HTTP provider，节点已下载
+sudo mihomo-refresh.sh
 
 # 一键体检
 sudo ap-diag.sh
