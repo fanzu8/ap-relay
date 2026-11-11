@@ -4,3 +4,7 @@
 *.pcap
 providers/*.yaml
 !providers/.gitkeep
+
+# 凭据文件。文档要求把 SECRET / SUB_URL 写进设备上的 *.local.conf 并设为 600，
+# 但本地调试渲染时很容易顺手在仓库里建一个同名文件；这里兜底，避免 `git add -A` 把真实凭据入库。
+*.local.conf
