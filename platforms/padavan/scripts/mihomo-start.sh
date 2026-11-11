@@ -52,10 +52,10 @@ ln -sf "$bin" /opt/bin/mihomo
 # ---- 先彻底停掉旧实例（会等到端口释放） ----
 "$here/mihomo-stop.sh" >/dev/null 2>&1
 
-# ---- 日志超过 1MB 就轮转，避免塞满 /tmp ----
-if [ -f "$MIHOMO_LOG" ] && [ "$(wc -c < "$MIHOMO_LOG")" -gt 1048576 ]; then
-	mv -f "$MIHOMO_LOG" "$MIHOMO_LOG.1"
-fi
+# ---- 日志归档：先按大小归档上一轮，再开一份新的 ----
+# 统一走 padavan_rotate_log（copytruncate），避免和守护期间的轮转实现两套语义。
+# 此时 mihomo 还没起来，没有 fd 问题。
+padavan_rotate_log >/dev/null 2>&1
 : > "$MIHOMO_LOG"
 
 # ---- 起守护脚本 ----

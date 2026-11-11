@@ -27,7 +27,8 @@ MIHOMO_MOUNT=${MIHOMO_DIR%/*}            # 挂载点（/media/mtd_rwfs），用�
 MIHOMO_CONF=/etc/mihomo                  # 运行期统一路径（start.sh 建的软链）
 MIHOMO_MODE_FILE=$MIHOMO_DIR/mode        # redirect / tun，重启后沿用
 MIHOMO_PID=/tmp/mihomo.pid               # 守护脚本 pid
-MIHOMO_LOG=/tmp/mihomo.log               # mihomo 标准输出
+MIHOMO_LOG=/tmp/mihomo.log               # mihomo 标准输出（追加写）
+MIHOMO_LOG_MAX=${MIHOMO_LOG_MAX:-1048576} # 单文件上限（字节），默认 1 MB；可临时改小做测试
 MIHOMO_PLATFORM_CONF=/etc/storage/mihomo.conf   # 平台变量文件（渲染与脚本共用）
 
 # ---- 端口 / 网段（可被 mihomo.conf 覆盖） ---------------------------------
@@ -120,4 +121,24 @@ padavan_wait_ports() {
 # 写 flash：/etc/storage 是 tmpfs，不 save 重启就丢。
 padavan_save_flash() {
 	/sbin/mtd_storage.sh save >/dev/null 2>&1
+}
+
+# 日志轮转（copytruncate 语义）。
+#
+# mihomo 的 stdout 是 `>>` 打开的，fd 带 O_APPEND，所以不能用 mv：
+# mv 之后进程继续写旧 inode —— 新日志永远是空的，旧副本反而无限增长。
+# 正确顺序是「先复制出副本，再原地截断同一个 inode」。
+#
+# 只在达到 MIHOMO_LOG_MAX 时才动；返回值仅用于观察，不打断守护流程。
+padavan_rotate_log() {
+	[ -f "$MIHOMO_LOG" ] || return 0
+
+	_size=$(wc -c < "$MIHOMO_LOG" 2>/dev/null | tr -d ' ')
+	[ -n "$_size" ] || return 0
+	[ "$_size" -ge "${MIHOMO_LOG_MAX:-1048576}" ] 2>/dev/null || return 0
+
+	cp -f "$MIHOMO_LOG" "$MIHOMO_LOG.1" 2>/dev/null || return 1
+	: > "$MIHOMO_LOG"
+	padavan_log "日志轮转：${_size} 字节 -> $MIHOMO_LOG.1"
+	return 0
 }
