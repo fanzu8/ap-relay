@@ -7,7 +7,7 @@
 [![License: General Pleasure League 1.0](https://img.shields.io/badge/license-General%20Pleasure%20League%201.0-blue.svg)](https://github.com/fanzu8/General-Pleasure-League)
 [![Platform: Linux](https://img.shields.io/badge/platform-Linux-informational.svg)](#硬件要求)
 [![Shell: POSIX sh](https://img.shields.io/badge/shell-POSIX%20sh-4EAA25.svg)](#脚本幂等性)
-[![Version: v0.1.0](https://img.shields.io/badge/version-v0.1.0-blue.svg)](#状态)
+[![Version: v0.2.0](https://img.shields.io/badge/version-v0.2.0-blue.svg)](#状态)
 [![Docs: English | 中文](https://img.shields.io/badge/docs-English%20%7C%20%E4%B8%AD%E6%96%87-success.svg)](README.md)
 [![GitHub: fanzu8/ap-relay](https://img.shields.io/badge/GitHub-fanzu8%2Fap--relay-181717.svg?logo=github)](https://github.com/fanzu8/ap-relay)
 
@@ -199,8 +199,9 @@ Padavan 另有一层平台环境 `platforms/padavan/scripts/mihomo-env.sh`
 
 ## 状态
 
-`v0.1.0` —— 在一台 OnePlus 6（postmarketOS 25.12 / ath10k）上完整验证；
-MI-R3G（Padavan）作为 `platforms/padavan/` 的第二个平台，与手机共用同一份模板和脚本。
+`v0.2.0` —— 在两端完整验证：OnePlus 6（postmarketOS 25.12 / ath10k）与
+MI-R3G（Padavan），共用同一份模板和一套脚本。脚本按层拆分
+（配置 → 能力 → 转换 → 编排），每个只做一件事；路由器日志自动轮转，不会无限增长。
 其他硬件/发行版欢迎反馈，但**不保证开箱可用**。
 
 ## 免责声明

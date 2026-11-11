@@ -7,7 +7,7 @@
 [![License: General Pleasure League 1.0](https://img.shields.io/badge/license-General%20Pleasure%20League%201.0-blue.svg)](https://github.com/fanzu8/General-Pleasure-League)
 [![Platform: Linux](https://img.shields.io/badge/platform-Linux-informational.svg)](#hardware-requirements)
 [![Shell: POSIX sh](https://img.shields.io/badge/shell-POSIX%20sh-4EAA25.svg)](#layout)
-[![Version: v0.1.0](https://img.shields.io/badge/version-v0.1.0-blue.svg)](#status)
+[![Version: v0.2.0](https://img.shields.io/badge/version-v0.2.0-blue.svg)](#status)
 [![Docs: English | 中文](https://img.shields.io/badge/docs-English%20%7C%20%E4%B8%AD%E6%96%87-success.svg)](README_zh.md)
 [![GitHub: fanzu8/ap-relay](https://img.shields.io/badge/GitHub-fanzu8%2Fap--relay-181717.svg?logo=github)](https://github.com/fanzu8/ap-relay)
 
@@ -220,10 +220,12 @@ power management are out of scope for this project. Consider
 
 ## Status
 
-`v0.1.0` — fully validated on one OnePlus 6 (postmarketOS 25.12 / ath10k).
-MI-R3G (Padavan) is the second platform under `platforms/padavan/`, sharing the
-same template and scripts as the phone. Feedback for other hardware/distros is
-welcome, but **out-of-the-box operation is not guaranteed**.
+`v0.2.0` — validated on two platforms: OnePlus 6 (postmarketOS 25.12 / ath10k)
+and MI-R3G (Padavan), which share the same template and scripts. The tooling is
+layered (config → capability → transform → orchestration), each script doing
+one job, and the router rotates its log on its own so it cannot grow unbounded.
+Feedback for other hardware/distros is welcome, but **out-of-the-box operation
+is not guaranteed**.
 
 ## Disclaimer
 
