@@ -301,7 +301,26 @@ curl --interface en0 --resolve host:443:<真实IP> https://host/...
 
 ---
 
-## 17. 常用 API 小抄
+## 17. `>>` 打开的日志只能 copytruncate，不能 `mv`
+
+**现象**：轮转脚本执行了，`mihomo.log` 也确实变成 0 字节，但**新日志一行都没有**，`mihomo.log.1` 反而一直在长。
+
+**原因**：`mihomo-run.sh` 用 `>> "$MIHOMO_LOG"` 把内核 stdout 接到文件上，进程持有的 fd 带 `O_APPEND`，绑定的是 **inode**，不是路径。`mv mihomo.log mihomo.log.1` 只改了目录项，fd 还指着同一个 inode —— 也就是现在的 `.1`。内核于是继续往 `.1` 写，新建的 `mihomo.log` 永远是空的。
+
+**结论**：按 logrotate 的 `copytruncate` 语义来，先复制、再原地截断：
+
+```sh
+cp -f "$MIHOMO_LOG" "$MIHOMO_LOG.1"   # 拿一份快照
+: > "$MIHOMO_LOG"                      # 同一个 inode 清零
+```
+
+`O_APPEND` 下截断是安全的：偏移被重置，下一次 write 从 0 开始，不需要重启进程、也不需要发信号。实现见 `mihomo-env.sh` 的 `padavan_rotate_log()`。
+
+验证办法：把阈值改小（`MIHOMO_LOG_MAX=4096`），灌满触发一轮，再把日志级别临时切到 `debug` 打一个请求。此时**新增行必须出现在 `mihomo.log`**，而 `.1` 停在轮转那一刻的大小不再增长；若 `.1` 还在变长，就是把 `mv` 写进去了。
+
+---
+
+## 18. 常用 API 小抄
 
 external-controller 只监听 `127.0.0.1:7070` 时，从 Mac 上排障用隧道：
 
@@ -323,7 +342,7 @@ S=$(ssh admin@192.168.2.1 "awk -F': ' '/^secret:/{print \$2; exit}' /etc/mihomo/
 
 ---
 
-## 18. `subscription-userinfo` 能看流量和到期
+## 19. `subscription-userinfo` 能看流量和到期
 
 HTTP provider 会把订阅响应头里的 `subscription-userinfo` 存下来，`GET /providers/proxies/<name>` 返回：
 

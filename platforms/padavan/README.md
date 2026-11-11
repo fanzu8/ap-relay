@@ -44,15 +44,48 @@
 └── ui/                 zashboard 构建产物
 ```
 
+## 日志
+
+mihomo 本身只按 `log-level` 往 stdout 打日志，本项目没有配日志文件，
+由 `mihomo-run.sh` 用 `>>` 重定向到：
+
+```
+/tmp/mihomo.log      当前写入
+/tmp/mihomo.log.1    上一轮快照
+```
+
+`/tmp` 是 tmpfs，两个文件占的是内存。轮转规则：
+
+| 项目 | 值 |
+|---|---|
+| 检查间隔 | **30 秒**（`mihomo-run.sh` 里的后台循环） |
+| 单文件上限 | **3 MB**（`MIHOMO_LOG_MAX`，默认 3145728 字节） |
+| 保留代数 | **1 代**（只覆盖 `.1`，不累积 `.2` / `.3`） |
+| 合计上限 | ≈ **6 MB** + 最多 30 秒的新增量 |
+
+- 轮转是 **copytruncate**：先 `cp` 出副本，再原地 `: >` 截断。**不能用 `mv`** ——
+  stdout 是 `O_APPEND` 打开的，`mv` 之后内核会继续往旧 inode 追加，新文件永远是空的。
+  实现见 `mihomo-env.sh` 的 `padavan_rotate_log()`。
+- `mihomo-start.sh` 启动时也调同一个函数归档，所以跨重启同样是 2 个文件、不累积。
+- 阈值可以用环境变量临时覆盖，做验证不必改代码：
+
+  ```sh
+  MIHOMO_LOG_MAX=4096 /etc/storage/mihomo-start.sh   # 4 KB 触发，几十秒内就能看到轮转
+  ```
+
+- 告警量的大头是 `direct` 模式下失败拨号的 `dial ... i/o timeout`。真要减量，
+  把 `mihomo.conf` 里的 `LOG_LEVEL` 从 `warning` 降到 `error`，然后
+  `mihomo-reload.sh`（`log-level` 是运行时项，不用重启）。
+
 ## 脚本职责
 
 ### Padavan 特有（本目录）
 
 | 脚本 | 作用 |
 |---|---|
-| `mihomo-env.sh` | 平台环境层（被 source）。持久分区/PID/日志路径、端口（读 `mihomo.conf`）、链名、`padavan_*` 小工具 |
+| `mihomo-env.sh` | 平台环境层（被 source）。持久分区/PID/日志路径、端口（读 `mihomo.conf`）、链名、`padavan_*` 小工具、日志轮转 `padavan_rotate_log()` |
 | `mihomo-start.sh` | 启动入口。加锁防并发、等 RWFS 挂载、检查 `enabled`、建 `/etc/mihomo` 软链、调 `mihomo-run.sh` |
-| `mihomo-run.sh` | 守护外壳。退出最多重试 3 次，失败保持直连 |
+| `mihomo-run.sh` | 守护外壳。退出最多重试 3 次，失败保持直连；旁边跑一个 30 秒周期的日志轮转循环 |
 | `mihomo-stop.sh` | 停进程，等端口释放，清 nat 链和 TUN 路由 |
 | `mihomo-fw.sh` | 防火墙 `up`/`down`。`redirect` 走 nat REDIRECT，`tun` 只劫持 DNS |
 | `mihomo-tun-route.sh` | TUN 模式策略路由，只把 `iif br0` 的转发流量导进 `meta` |
