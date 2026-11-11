@@ -28,7 +28,7 @@ MIHOMO_CONF=/etc/mihomo                  # 运行期统一路径（start.sh 建�
 MIHOMO_MODE_FILE=$MIHOMO_DIR/mode        # redirect / tun，重启后沿用
 MIHOMO_PID=/tmp/mihomo.pid               # 守护脚本 pid
 MIHOMO_LOG=/tmp/mihomo.log               # mihomo 标准输出（追加写）
-MIHOMO_LOG_MAX=${MIHOMO_LOG_MAX:-1048576} # 单文件上限（字节），默认 1 MB；可临时改小做测试
+MIHOMO_LOG_MAX=${MIHOMO_LOG_MAX:-3145728} # 单文件上限（字节），默认 3 MB；可临时改小做测试
 MIHOMO_PLATFORM_CONF=/etc/storage/mihomo.conf   # 平台变量文件（渲染与脚本共用）
 
 # ---- 端口 / 网段（可被 mihomo.conf 覆盖） ---------------------------------
@@ -135,7 +135,7 @@ padavan_rotate_log() {
 
 	_size=$(wc -c < "$MIHOMO_LOG" 2>/dev/null | tr -d ' ')
 	[ -n "$_size" ] || return 0
-	[ "$_size" -ge "${MIHOMO_LOG_MAX:-1048576}" ] 2>/dev/null || return 0
+	[ "$_size" -ge "${MIHOMO_LOG_MAX:-3145728}" ] 2>/dev/null || return 0
 
 	cp -f "$MIHOMO_LOG" "$MIHOMO_LOG.1" 2>/dev/null || return 1
 	: > "$MIHOMO_LOG"

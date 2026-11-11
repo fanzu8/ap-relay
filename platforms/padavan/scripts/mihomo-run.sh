@@ -50,13 +50,13 @@ while [ "$n" -lt 3 ]; do
 	"$bin" -d "$conf" -f "$conf/config.yaml" >> "$MIHOMO_LOG" 2>&1 &
 	child=$!
 
-	# 后台日志轮转：每 15 秒看一眼大小，超过上限就 copytruncate。
+	# 后台日志轮转：每 30 秒看一眼大小，超过 3 MB 就 copytruncate。
 	# 放在子进程里做，不阻塞启动和等待路径；内核退出后循环自然结束，
 	# 再由下面的 kill 收尾（kill -0 对僵尸进程仍返回成功，所以必须显式收）。
 	{
 		while kill -0 "$child" 2>/dev/null; do
 			padavan_rotate_log
-			sleep 15
+			sleep 30
 		done
 	} &
 	rot=$!
